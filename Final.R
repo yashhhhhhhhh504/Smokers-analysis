@@ -20,10 +20,8 @@ cat("BMI \t\t\t", round(mean_bmi, 2), "+/-", round(sd_bmi, 2), "\t\t\t", round(m
 cat("Pre.Op.Creatinine \t", round(mean_creatinine, 2), "+/-", round(sd_creatinine, 2), "\t\t\t", round(mean_creatinine, 2), "\n")
 # Create histogram for Age
 hist(data$Age, main = "Age Distribution", xlab = "Age", ylab = "Frequency")
-
 # Create histogram for Total.Days.In.Hospital
 hist(data$Total.Days.In.Hospital, main = "Total Days in Hospital Distribution", xlab = "Total Days in Hospital", ylab = "Frequency")
-
 ###################################################################################
 
 # Create a frequency table for Sex
@@ -89,81 +87,80 @@ kable(regression_table, align = "c", format.args = list(digits = 3),
       col.names = c("Variable", "Level", "Estimate", "Std. Error", "P-value"), 
       caption = "Table 3. Linear Regression Model")
 #################################################################################################################
-# Recode Prolonged_Hospital_Stay as a binary variable
-data$Prolonged_Hospital_Stay <- ifelse(data$Total.Days.In.Hospital > 11, 1, 0)
+# Perform linear regression using forward selection
+final_model <- step(lm(Total.Days.In.Hospital ~ ., data = train_data), direction = "forward")
 
-# Univariate logistic regression analysis
-univariate_model <- glm(Prolonged_Hospital_Stay ~ Renal.Impairment, data = data, family = "binomial")
-univariate_results <- summary(univariate_model)$coefficients[, c(1, 4)]
+# Extract the model coefficients
+coef_table <- coef(final_model)
 
-# Multivariate logistic regression analysis
-multivariate_model <- glm(Prolonged_Hospital_Stay ~ Age + Renal.Impairment + Diabetes.General, data = data, family = "binomial")
-multivariate_results <- summary(multivariate_model)$coefficients[, c(1, 4)]
+# Extract the standard errors
+se_table <- summary(final_model)$coefficients[, 2]
 
-# Create the odds ratio table
-odds_ratio_table <- data.frame(
-  Variable = c("Renal Impairment", "Age", "Renal Impairment", "Diabetes.General"),
-  Level = c("Moderately Impaired", "", "Severely Impaired", ""),
-  OR = c(univariate_results[2, 1], multivariate_results[2:4, 1]),
-  P.value = c(univariate_results[2, 2], multivariate_results[2:4, 2]),
-  stringsAsFactors = FALSE
-)
+# Extract the p-values
+p_table <- summary(final_model)$coefficients[, 4]
 
-# Print the odds ratio table
-knitr::kable(odds_ratio_table, align = "c",
-             col.names = c("Variable", "Level", "OR", "P-value"),
-             caption = "Table: Logistic Regression Results - Unadjusted and Adjusted Odds Ratios")
-###################################################################################################################
-# Load the required libraries
-library(caret)
-# Create a new variable based on Total.Days.In.Hospital
-data$Prolonged_Hospital_Stay <- ifelse(data$Total.Days.In.Hospital > 11, "Prolonged", "Not Prolonged")
-# Split the data into training and testing sets
-set.seed(123)  # For reproducibility
-train_indices <- createDataPartition(data$Prolonged_Hospital_Stay, p = 0.7, list = FALSE)
-train_data <- data[train_indices, ]
-test_data <- data[-train_indices, ]
-unique(train_data$Prolonged_Hospital_Stay)
-class(train_data$Prolonged_Hospital_Stay)
-train_data$Prolonged_Hospital_Stay <- as.factor(train_data$Prolonged_Hospital_Stay)
-# Perform univariate logistic regression analysis
-univariate_model <- glm(Prolonged_Hospital_Stay ~ ., data = train_data, family = "binomial", maxit = 100)
-univariate_results <- summary(univariate_model)$coefficients[, c(1, 4)]
-# Perform multivariate logistic regression analysis
-multivariate_model <- stepAIC(univariate_model, direction = "forward", trace = FALSE)
-multivariate_results <- summary(multivariate_model)$coefficients[, c(1, 4)]
-# Create the odds ratio table
-odds_ratio_table <- data.frame(
-  Variable = rownames(univariate_results),
+# Create the regression table
+regression_table <- data.frame(
+  Variable = names(coef_table),
   Level = "",
-  Unadjusted_OR = univariate_results[, 1],
-  Unadjusted_Pvalue = univariate_results[, 4],
-  Adjusted_OR = multivariate_results[, 1],
-  Adjusted_Pvalue = multivariate_results[, 3],
-  stringsAsFactors = FALSE
+  Estimate = coef_table,
+  `St. Error` = se_table,
+  `P-value` = p_table
 )
-# Print the odds ratio table
-print(odds_ratio_table)
 
-##################################################################################################################
-# Predict probabilities on test data
-test_prob <- predict(univariate_model, newdata = test_data, type = "response")
+# Print the regression table
+kable(regression_table, align = "c", format.args = list(digits = 3), 
+      col.names = c("Variable", "Level", "Estimate", "St. Error", "P-value"), 
+      caption = "Table 4. Final Linear Regression Model")
 
-# Create a binary outcome based on a threshold
-threshold <- 0.5
-test_pred <- ifelse(test_prob > threshold, 1, 0)
+###################################################################################################################
+# Convert Total.Days.In.Hospital to numeric
+data$Total.Days.In.Hospital <- as.numeric(as.character(data$Total.Days.In.Hospital))
+# Calculate predicted values
+predicted_values <- predict(model)
 
-# Create a confusion matrix
-confusion_matrix <- table(test_data$Prolonged_Hospital_Stay, test_pred)
+# Calculate MSE
+mse <- mean((data$Total.Days.In.Hospital - predicted_values)^2)
 
-# Calculate True Positive Rate (TPR) and False Positive Rate (FPR)
-TPR <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
-FPR <- confusion_matrix[1, 2] / sum(confusion_matrix[1, ])
+# Calculate MAE
+mae <- mean(abs(data$Total.Days.In.Hospital - predicted_values))
 
-# Plot the ROC curve
+# Calculate R-squared
+ss_total <- sum((data$Total.Days.In.Hospital - mean(data$Total.Days.In.Hospital))^2)
+ss_residual <- sum((data$Total.Days.In.Hospital - predicted_values)^2)
+r_squared <- 1 - (ss_residual / ss_total)
+
+# Print evaluation metrics
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Mean Absolute Error (MAE):", mae, "\n")
+cat("R-squared:", r_squared, "\n")
+
 library(pROC)
-roc_obj <- roc(test_data$Prolonged_Hospital_Stay, test_prob)
-plot(roc_obj, main = "ROC Curve", xlab = "False Positive Rate (1 - Specificity)", ylab = "True Positive Rate (Sensitivity)")
+
+# Convert Total.Days.In.Hospital to numeric
+data$Total.Days.In.Hospital <- as.numeric(as.character(data$Total.Days.In.Hospital))
+
+# Set a threshold for converting the problem into binary classification
+threshold <- 7
+
+# Create binary labels based on the threshold
+binary_labels <- ifelse(data$Total.Days.In.Hospital > threshold, 1, 0)
+
+# Calculate predicted probabilities
+predicted_probs <- predict(model, type = "response")
+
+# Create ROC curve
+roc_obj <- roc(binary_labels, predicted_probs)
+
+# Plot ROC curve
+plot(roc_obj, main = "ROC Curve", xlab = "False Positive Rate", ylab = "True Positive Rate")
+
+# Add AUC value to the plot
+auc_value <- auc(roc_obj)
+text(0.5, 0.3, paste0("AUC = ", round(auc_value, 3)), cex = 1.2)
+
+# Add a legend
+legend("bottomright", legend = "Linear Regression", col = "black", lwd = 2)
 
 #####################################################################################################################
 #K MEANS CLUSTERING
@@ -186,9 +183,11 @@ sil_width <- silhouette(kmeans_model$cluster, dist(scaled_data))
 sil_avg <- aggregate(sil_width[, "sil_width"], by = list(kmeans_model$cluster), FUN = mean)
 
 plot(sil_avg[, "Group.1"], sil_avg[, "x"], type = "b", xlab = "Number of Clusters", ylab = "Average Silhouette Width", main = "Silhouette Plot")
-library(cluster)
+kmeans_control <- function(n) {
+  kmeans(nstart = 10, maxiter = n)
+}
 
-gap_stat <- clusGap(scaled_data, FUN = kmeans, nstart = 10, K.max = 10, B = 50)
+gap_stat <- clusGap(scaled_data, FUN = kmeans_control, K.max = 10, B = 100)
 
 plot(gap_stat, main = "Gap Statistic")
 k <- 3  # Choose the desired number of clusters based on the analysis
